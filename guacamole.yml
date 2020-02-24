@@ -1,0 +1,106 @@
+---
+- name: guacamole
+  hosts: "{{ target }}"
+  gather_facts: true
+  become: true
+  tasks:
+
+    - name: Docker Installation
+      package:
+        name: "{% if ansible_facts['os_family'] == 'RedHat' %}docker{% elif ansible_facts['os_family'] == 'Debian' %}docker.io{% endif %}"
+        state: present
+
+    - name: Docker Service
+      systemd:
+        name: docker
+        state: started
+        enabled: True
+
+    - name: Guacamole data dir
+      file:
+        path: /opt/guacamole
+        state: directory
+        owner: root
+        group: root
+        mode: '0750'
+
+    - name: Determine db passwords set
+      stat:
+        path: "/opt/guacamole/{{ item }}"
+      register: "{{ item }}_file"
+      with_items:
+        - guacdb_root
+        - guacdb_guacamole
+
+    - name: Create db passwords when not set
+      shell: |
+        head /dev/urandom | tr -dc A-Za-z0-9 | head -c 20 > {{ item }}_file
+      when: "{{ item }}_file.stat.exists|bool == False"
+      with_items:
+        - guacdb_root
+        - guacdb_guacamole
+
+    - name: Register db passwords
+      shell: |
+        cat {{ item }}_file
+      register: "{{ item }}_pass"
+      with_items:
+        - guacdb_root
+        - guacdb_guacamole
+
+    - name: Docker Network and Volume
+      shell: |
+        docker network create --driver bridge --subnet={{ guacnet_cidr }} guacnet
+        docker volume create --name guacdb
+      ignore_errors: True
+
+    - name: guacd container launch
+      shell: |
+        docker run -d --name guacd --network guacnet --ip {{ guacnet_guacd }} -d guacamole/guacd
+
+    - name: guacdb container launch
+      shell: |
+        docker run -d --name guacdb --network guacnet --ip {{ guacnet_guacdb }} --volume guacdb:/var/lib/mysql:Z -d mysql:mysql-server
+
+    - name: guacamole container launch
+      shell: |
+        docker run -d --name guacamole --network guacnet --ip {{ guacnet_guacamole }} --link guacd:guacd --link guacdb:mysql -e MYSQL_HOSTNAME={{ guacnet_guacdb }} -e MYSQL_PORT=3306 -e MYSQL_DATABASE=guacamole_db -e MYSQL_USER=guacamole_user -e MYSQL_PASSWORD={{ guacdb_guacamole_pass.stdout }} -e GUACD_HOSTNAME={{ guacnet_guacd }} -e GUACD_PORT=4822 -e GUACD_LOG_LEVEL=debug -d -p 8080:8080 guacamole/guacamole
+
+    - name: Determine otp complete
+      stat:
+        path: /opt/guacamole/otp.done
+      register: guacdb_otp_done
+
+    - name: dumb wait for mysqld to gen password
+      wait_for:
+        timeout: 15
+      delegate_to: localhost
+      when: guacdb_otp_done.stat.exists|bool == False
+
+    - name: retrieve mysql otp
+      shell: |
+        docker logs guacdb 2>&1 | awk '/GENERATED ROOT PASSWORD/ {print $5}' | sed 's#;#\\;#g'
+      register: guacdb_otp_pass
+      when: guacdb_otp_done.stat.exists|bool == False
+
+    - name: dbpass.sql
+      template:
+        src: dbpass.sql
+        dest: /opt/guacamole/dbpass.sql
+        owner: root
+        group: root
+        mode: '0400'
+      when: guacdb_otp_done.stat.exists|bool == False
+
+    - name: Configure db (one-time)
+      shell: |
+        # credentials
+        docker exec -i guacdb /bin/bash -c 'cat > dbpass.sql' < /opt/guacamole/dbpass.sql
+        docker exec -it guacdb /bin/bash -c "mysql -uroot -p{{ guacdb_otp_pass.stdout }} --connect-expired-password < dbpass.sql"
+        docker exec -i guacdb /bin/bash -c 'rm -f dbpass.sql'
+        touch /opt/guacamole/otp.done
+        # schema
+        docker exec -i guacamole /bin/bash -c 'cat /opt/guacamole/mysql/schema/*.sql' > /opt/guacamole/dbschema.sql
+        docker exec -i guacdb /bin/bash -c 'cat > dbschema.sql' < /opt/guacamole/dbschema.sql
+        docker exec -it guacdb /bin/bash -c "mysql -uroot -p{{ guacdb_root_pass.stdout }} guacamole_db < dbschema.sql"
+      when: guacdb_otp_done.stat.exists|bool == False
