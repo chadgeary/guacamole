@@ -58,22 +58,18 @@
       shell: |
         docker network create --driver bridge --subnet={{ guacnet_cidr }} guacnet
         docker volume create --name guacdb
-      ignore_errors: True
 
     - name: guacd container launch
       shell: |
         docker run -d --name guacd --network guacnet --ip {{ guacnet_guacd }} -d guacamole/guacd
-      ignore_errors: True
 
     - name: guacdb container launch
       shell: |
         docker run -d --name guacdb --network guacnet --ip {{ guacnet_guacdb }} --volume guacdb:/var/lib/mysql:Z -d mysql/mysql-server
-      ignore_errors: True
 
     - name: guacamole container launch
       shell: |
         docker run -d --name guacamole --network guacnet --ip {{ guacnet_guacamole }} --link guacd:guacd --link guacdb:mysql -e MYSQL_HOSTNAME={{ guacnet_guacdb }} -e MYSQL_PORT=3306 -e MYSQL_DATABASE=guacamole_db -e MYSQL_USER=guacamole_user -e MYSQL_PASSWORD={{ guacdb_guacamole_pass.stdout }} -e GUACD_HOSTNAME={{ guacnet_guacd }} -e GUACD_PORT=4822 -e GUACD_LOG_LEVEL=debug -d -p 8080:8080 guacamole/guacamole
-      ignore_errors: True
 
     - name: Determine otp complete
       stat:
