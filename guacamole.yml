@@ -24,29 +24,35 @@
         group: root
         mode: '0750'
 
-    - name: Determine db passwords set
+    - name: Determine db passwords set (root)
       stat:
-        path: "/opt/guacamole/{{ item }}"
-      register: "{{ item }}_file"
-      with_items:
-        - guacdb_root
-        - guacdb_guacamole
+        path: /opt/guacamole/guacdb_root_file
+      register: guacdb_root_file
 
-    - name: Create db passwords when not set
+    - name: Determine db passwords set (guacamole)
+      stat:
+        path: /opt/guacamole/guacdb_guacamole_file
+      register: guacdb_guacamole_file
+
+    - name: Create db passwords when not set (root)
       shell: |
-        head /dev/urandom | tr -dc A-Za-z0-9 | head -c 20 > {{ item }}_file
-      when: "{{ item }}_file.stat.exists|bool == False"
-      with_items:
-        - guacdb_root
-        - guacdb_guacamole
+        head /dev/urandom | tr -dc A-Za-z0-9 | head -c 20 > /opt/guacamole/guacdb_root_file
+      when: guacdb_root_file.stat.exists|bool == False
+
+    - name: Create db passwords when not set (guacamole)
+      shell: |
+        head /dev/urandom | tr -dc A-Za-z0-9 | head -c 20 > /opt/guacamole/guacdb_guacamole_file
+      when: guacdb_guacamole_file.stat.exists|bool == False
 
     - name: Register db passwords
       shell: |
-        cat {{ item }}_file
-      register: "{{ item }}_pass"
-      with_items:
-        - guacdb_root
-        - guacdb_guacamole
+        cat /opt/guacamole/guacdb_root_file
+      register: guacdb_root_pass
+
+    - name: Register db pass (guacamole)
+      shell: |
+        cat /opt/guacamole/guacdb_guacamole_file
+      register: guacdb_guacamole_pass
 
     - name: Docker Network and Volume
       shell: |
