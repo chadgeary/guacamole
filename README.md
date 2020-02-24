@@ -11,4 +11,6 @@ ansible-playbook guacamole.yml --extra-vars="target=localhost guacnet_cidr=192.1
 ```
 - guacnet_cidr and the associated guacnet_* vars need to available for use locally within the docker service.
 - the database credentials are available in /opt/guacamole on the docker host.
+- guacadmin:guacadmin are the default credentials
+- https://localhost:8080/guacamole is the default web endpoint
 ```

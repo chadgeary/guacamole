@@ -63,14 +63,17 @@
     - name: guacd container launch
       shell: |
         docker run -d --name guacd --network guacnet --ip {{ guacnet_guacd }} -d guacamole/guacd
+      ignore_errors: True
 
     - name: guacdb container launch
       shell: |
-        docker run -d --name guacdb --network guacnet --ip {{ guacnet_guacdb }} --volume guacdb:/var/lib/mysql:Z -d mysql:mysql-server
+        docker run -d --name guacdb --network guacnet --ip {{ guacnet_guacdb }} --volume guacdb:/var/lib/mysql:Z -d mysql/mysql-server
+      ignore_errors: True
 
     - name: guacamole container launch
       shell: |
         docker run -d --name guacamole --network guacnet --ip {{ guacnet_guacamole }} --link guacd:guacd --link guacdb:mysql -e MYSQL_HOSTNAME={{ guacnet_guacdb }} -e MYSQL_PORT=3306 -e MYSQL_DATABASE=guacamole_db -e MYSQL_USER=guacamole_user -e MYSQL_PASSWORD={{ guacdb_guacamole_pass.stdout }} -e GUACD_HOSTNAME={{ guacnet_guacd }} -e GUACD_PORT=4822 -e GUACD_LOG_LEVEL=debug -d -p 8080:8080 guacamole/guacamole
+      ignore_errors: True
 
     - name: Determine otp complete
       stat:
@@ -102,11 +105,11 @@
       shell: |
         # credentials
         docker exec -i guacdb /bin/bash -c 'cat > dbpass.sql' < /opt/guacamole/dbpass.sql
-        docker exec -it guacdb /bin/bash -c "mysql -uroot -p{{ guacdb_otp_pass.stdout }} --connect-expired-password < dbpass.sql"
+        docker exec -i guacdb /bin/bash -c "mysql -uroot -p{{ guacdb_otp_pass.stdout }} --connect-expired-password < dbpass.sql"
         docker exec -i guacdb /bin/bash -c 'rm -f dbpass.sql'
         touch /opt/guacamole/otp.done
         # schema
         docker exec -i guacamole /bin/bash -c 'cat /opt/guacamole/mysql/schema/*.sql' > /opt/guacamole/dbschema.sql
         docker exec -i guacdb /bin/bash -c 'cat > dbschema.sql' < /opt/guacamole/dbschema.sql
-        docker exec -it guacdb /bin/bash -c "mysql -uroot -p{{ guacdb_root_pass.stdout }} guacamole_db < dbschema.sql"
+        docker exec -i guacdb /bin/bash -c "mysql -uroot -p{{ guacdb_root_pass.stdout }} guacamole_db < dbschema.sql"
       when: guacdb_otp_done.stat.exists|bool == False
