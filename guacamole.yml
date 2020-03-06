@@ -7,7 +7,7 @@
 
     - name: Docker Installation
       package:
-        name: "{% if ansible_facts['os_family'] == 'RedHat' %}docker{% elif ansible_facts['os_family'] == 'Debian' %}docker.io{% endif %}"
+        name: "{% if ansible_os_family == 'RedHat' %}docker{% elif ansible_os_family == 'Debian' %}docker.io{% endif %}"
         state: present
 
     - name: Docker Service
