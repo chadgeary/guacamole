@@ -13,4 +13,5 @@ ansible-playbook guacamole.yml --extra-vars="target=localhost guacnet_cidr=192.1
 - if needed, database credentials are available in /opt/guacamole on the docker host.
 - guacadmin:guacadmin are the default web admin credentials.
 - https://localhost:8080/guacamole is the default web endpoint.
+- tested with CentOS 7 and Ubuntu 18.04
 ```
