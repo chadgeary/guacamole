@@ -9,7 +9,7 @@
       set_fact:
         container_command: docker
       when:
-        - ansible_os_family == 'RedHat' and ansible_distribution_major_version == "7" or ansible_os_family == 'Debian'
+        - (ansible_os_family == 'RedHat' and ansible_distribution_major_version == "7") or ansible_os_family == 'Debian'
 
     - name: Set container_command = podman for rhel8
       set_fact:
