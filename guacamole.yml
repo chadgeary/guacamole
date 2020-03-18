@@ -72,7 +72,7 @@
       shell: |
         {{ container_command }} volume create guacdb
 
-    - name: Docker Network - docker only (not podman)
+    - name: Docker Network - docker 
       shell: |
         {{ container_command }} network create --driver bridge --subnet={{ guacnet_cidr }} guacnet
       ignore_errors: True
@@ -102,7 +102,7 @@
 
     - name: Wait for mysqld to generate OTP
       wait_for:
-        timeout: 30
+        timeout: 20
       delegate_to: localhost
       when: guacdb_otp_done.stat.exists|bool == False
 
@@ -112,28 +112,22 @@
       register: guacdb_otp_pass
       when: guacdb_otp_done.stat.exists|bool == False
 
-    - name: Set my.cnf OTP
+    - name: Set my.cnf-otp and dbpass.sql for OTP Commands
       template:
-        src: my.cnf-otp
-        dest: /opt/guacamole/my.cnf
+        src: "{{ item }}"
+        dest: "/opt/guacamole/{{ item }}"
         owner: root
         group: root
         mode: '0400'
+      with_items:
+        - my.cnf-otp
+        - dbpass.sql
       when: guacdb_otp_done.stat.exists|bool == False
 
-    - name: Set dbpass.sql
-      template:
-        src: dbpass.sql
-        dest: /opt/guacamole/dbpass.sql
-        owner: root
-        group: root
-        mode: '0400'
-      when: guacdb_otp_done.stat.exists|bool == False
-
-    - name: Configure DB via OTP
+    - name: Configure DB via OTP Commands
       shell: |
         # credentials
-        {{ container_command }} cp /opt/guacamole/my.cnf guacdb:/root/.my.cnf
+        {{ container_command }} cp /opt/guacamole/my.cnf-otp guacdb:/root/.my.cnf
         {{ container_command }} cp /opt/guacamole/dbpass.sql guacdb:dbpass.sql
         {{ container_command }} exec -i guacdb /bin/bash -c "mysql --connect-expired-password < dbpass.sql"
         {{ container_command }} exec -i guacdb /bin/bash -c 'rm -f dbpass.sql'

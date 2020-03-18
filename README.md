@@ -13,7 +13,7 @@ ansible-playbook guacamole.yml --extra-vars="target=localhost guacnet_guacd=10.8
 # Notes
 ```
 - For non-rhel8, guacnet_cidr and the associated guacnet_<ip> variables must not be in use, they're for docker services.
-- For rhel8, guacnet_<ip> variables must be within 10.88.0.0/16, the default podman network.
+- For rhel8, guacnet_<ip> variables must be within 10.88.0.0/16, the default podman network. This is a podman limitation.
 - if needed, database credentials are available in /opt/guacamole on the docker host.
 - guacadmin:guacadmin are the default web admin credentials.
 - https://localhost:8080/guacamole is the default web endpoint.
