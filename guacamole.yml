@@ -82,7 +82,7 @@
     - name: Container Launch - docker
       shell: |
         {{ container_command }} run -d --name guacd --network guacnet --ip {{ guacnet_guacd }} -d guacamole/guacd
-        {{ container_command }} run -d --name guacdb --network guacnet --ip {{ guacnet_guacdb }} --volume guacdb:/var/lib/mysql:Z -d mysql/mysql-server
+        {{ container_command }} run -d --name guacdb --network guacnet --ip {{ guacnet_guacdb }} --volume guacdb:/var/lib/mysql:Z -e MYSQL_ROOT_PASSWORD={{ guacdb_root_pass.stdout }} -d mysql/mysql-server
         {{ container_command }} run -d --name guacamole --network guacnet --ip {{ guacnet_guacamole }} --link guacd:guacd --link guacdb:mysql -e MYSQL_HOSTNAME={{ guacnet_guacdb }} -e MYSQL_PORT=3306 -e MYSQL_DATABASE=guacamole_db -e MYSQL_USER=guacamole_user -e MYSQL_PASSWORD={{ guacdb_guacamole_pass.stdout }} -e GUACD_HOSTNAME={{ guacnet_guacd }} -e GUACD_PORT=4822 -e GUACD_LOG_LEVEL=debug -d -p 8080:8080 guacamole/guacamole
       when:
         - container_command == 'docker'
@@ -90,29 +90,17 @@
     - name: Container Launch - podman
       shell: |
         {{ container_command }} run -d --name guacd --ip {{ guacnet_guacd }} guacamole/guacd
-        {{ container_command }} run -d --name guacdb --ip {{ guacnet_guacdb }} --volume guacdb:/var/lib/mysql:Z mysql/mysql-server
+        {{ container_command }} run -d --name guacdb --ip {{ guacnet_guacdb }} --volume guacdb:/var/lib/mysql:Z -e MYSQL_ROOT_PASSWORD={{ guacdb_root_pass.stdout }} mysql/mysql-server
         {{ container_command }} run -d --name guacamole --ip {{ guacnet_guacamole }} -e MYSQL_HOSTNAME={{ guacnet_guacdb }} -e MYSQL_PORT=3306 -e MYSQL_DATABASE=guacamole_db -e MYSQL_USER=guacamole_user -e MYSQL_PASSWORD={{ guacdb_guacamole_pass.stdout }} -e GUACD_HOSTNAME={{ guacnet_guacd }} -e GUACD_PORT=4822 -e GUACD_LOG_LEVEL=debug -p 8080:8080 guacamole/guacamole
       when:
         - container_command == 'podman'
 
-    - name: Determine if OTP was done
+    - name: Determine if (One Time) was done
       stat:
-        path: /opt/guacamole/otp.done
-      register: guacdb_otp_done
+        path: /opt/guacamole/one_time_done
+      register: guacdb_one_time_done
 
-    - name: Wait for mysqld to generate OTP
-      wait_for:
-        timeout: 20
-      delegate_to: localhost
-      when: guacdb_otp_done.stat.exists|bool == False
-
-    - name: Retrieve OTP
-      shell: |
-        {{ container_command }} logs guacdb 2>&1 | awk '/GENERATED ROOT PASSWORD/ {print $5}' | sed 's#;#\\;#g'
-      register: guacdb_otp_pass
-      when: guacdb_otp_done.stat.exists|bool == False
-
-    - name: Set my.cnf-otp and dbpass.sql for OTP Commands
+    - name: Set my.cnf and dbpass.sql
       template:
         src: "{{ item }}"
         dest: "/opt/guacamole/{{ item }}"
@@ -120,20 +108,28 @@
         group: root
         mode: '0400'
       with_items:
-        - my.cnf-otp
+        - my.cnf
         - dbpass.sql
-      when: guacdb_otp_done.stat.exists|bool == False
+      when: guacdb_one_time_done.stat.exists|bool == False
 
-    - name: Configure DB via OTP Commands
+    - name: Wait for mysqld on 3306
+      shell: |
+        {{ container_command }} logs guacdb 2>&1 | grep --quiet 'port: 3306'
+      register: wait_for_mysqld
+      until: wait_for_mysqld.rc == 0
+      retries: 15
+      delay: 15
+      when: guacdb_one_time_done.stat.exists|bool == False
+
+    - name: Configure DB (One Time)
       shell: |
         # credentials
-        {{ container_command }} cp /opt/guacamole/my.cnf-otp guacdb:/root/.my.cnf
+        {{ container_command }} cp /opt/guacamole/my.cnf guacdb:/root/.my.cnf
         {{ container_command }} cp /opt/guacamole/dbpass.sql guacdb:dbpass.sql
-        {{ container_command }} exec -i guacdb /bin/bash -c "mysql --connect-expired-password < dbpass.sql"
-        {{ container_command }} exec -i guacdb /bin/bash -c 'rm -f dbpass.sql'
-        touch /opt/guacamole/otp.done
+        {{ container_command }} exec -i guacdb /bin/bash -c "mysql < dbpass.sql"
+        touch /opt/guacamole/one_time_done
         # schema
         {{ container_command }} exec -i guacamole /bin/bash -c 'cat /opt/guacamole/mysql/schema/*.sql' > /opt/guacamole/dbschema.sql
         {{ container_command }} cp /opt/guacamole/dbschema.sql guacdb:dbschema.sql
-        {{ container_command }} exec -i guacdb /bin/bash -c "mysql -uroot -p{{ guacdb_root_pass.stdout }} guacamole_db < dbschema.sql"
-      when: guacdb_otp_done.stat.exists|bool == False
+        {{ container_command }} exec -i guacdb /bin/bash -c "mysql guacamole_db < dbschema.sql"
+      when: guacdb_one_time_done.stat.exists|bool == False
